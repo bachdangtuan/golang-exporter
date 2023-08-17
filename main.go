@@ -1,37 +1,52 @@
 package main
 
 import (
-    "net/http"
-    "github.com/prometheus/client_golang/prometheus"
-    "github.com/prometheus/client_golang/prometheus/promhttp"
+	"fmt"
+	"net"
+	"net/http"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
-    requestTotal = prometheus.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "http_requests_total",
-            Help: "Total number of HTTP requests.",
-        },
-        []string{"method"},
-    )
+	ipAddress = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "machine_ip_address",
+			Help: "IP address of the machine.",
+		},
+		[]string{"ip"},
+	)
 )
 
-
-
-
 func main() {
-    // Đăng ký metric với Prometheus
-    prometheus.MustRegister(requestTotal)
+	prometheus.MustRegister(ipAddress)
 
-    // Tạo một HTTP handler để tăng giá trị của metric mỗi khi có request
-    http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-        requestTotal.WithLabelValues(r.Method).Inc()
-        w.Write([]byte("Hello, Prometheus!"))
-    })
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Exporter is running!"))
+	})
 
-    // Đăng ký endpoint metrics cho Prometheus scrape
-    http.Handle("/metrics", promhttp.Handler())
+	http.Handle("/metrics", promhttp.Handler())
 
-    // Bắt đầu server
-    http.ListenAndServe(":8080", nil)
+	go startExporter()
+
+	http.ListenAndServe(":8080", nil)
+}
+
+func startExporter() {
+	for {
+		ip, err := getMachineIP()
+		if err == nil {
+			ipAddress.WithLabelValues(ip).Set(1)
+		} else {
+			ipAddress.WithLabelValues("unknown").Set(0)
+		}
+	}
+}
+
+func getMachineIP() (string, error) {
+	hostname, err := net.LookupAddr("127.0.0.1")
+	if err != nil {
+		return "", err
+	}
+	return hostname[0], nil
 }
